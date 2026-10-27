@@ -42,7 +42,7 @@
   // attachments; each is downloaded once and remembered by message id.
   var seen = {}; // message id -> decrypted state, or false if not ours
   function fetchLatest(cfg, cb) {
-    req('GET', 'https://ntfy.sh/' + cfg.topic + '/json?poll=1&since=all&t=' + Date.now(), null, function (err, txt) {
+    req('GET', 'https://ntfy.sh/' + cfg.topic + '/json?poll=1&since=all', null, function (err, txt) {
       if (err) return cb(err);
       var msgs = [];
       (txt || '').split('\n').forEach(function (line) {
