@@ -83,6 +83,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   var MAX_ITEMS = 25, MAX_LEN = 140;
   var app = document.getElementById('app');
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
+  // A personal link carries the passcode and name after '#' (never sent to any server).
+  (function () {
+    var h = {}; (location.hash || '').replace(/^#/, '').split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) h[p[0]] = decodeURIComponent(p[1] || ''); });
+    if (h.k) ls('tvn-pass', h.k.trim().toLowerCase());
+    if (h.me) ls('tvn-me', h.me);
+  })();
   var pass = ls('tvn-pass'), me = ls('tvn-me'), cfg = pass ? TVNotes.derive(pass) : null;
   var state = null, lastSync = 0, syncErr = false, kind = ls('tvn-kind') || 'todo', color = ls('tvn-color') || 'yellow', busy = false;
   try { state = JSON.parse(ls('tvn-cache') || 'null'); } catch (e) {}
@@ -97,13 +103,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
       e.preventDefault();
       var v = document.getElementById('pin').value.trim().toLowerCase();
       if (v.split('-').length < 4) { document.getElementById('perr').textContent = 'That doesn’t look like your passcode. It has four words and a number, joined by dashes.'; return; }
-      ls('tvn-pass', v); pass = v; cfg = TVNotes.derive(v); state = null; ls('tvn-cache', null); start();
+      ls('tvn-pass', v); pass = v; cfg = TVNotes.derive(v); state = null; ls('tvn-cache', null); keepHash(); start();
     };
   }
   function renderWho() {
     app.innerHTML = '<div class="lock"><h1>Who’s this?</h1><p>Notes you add will be marked with your color.</p><div class="people">' +
       PEOPLE.map(function (p, i) { return '<button data-i="' + i + '"><span class="av" style="background:' + p.color + '">' + p.name[0] + '</span>' + esc(p.name) + '</button>'; }).join('') + '</div></div>';
-    [].forEach.call(app.querySelectorAll('.people button'), function (b) { b.onclick = function () { me = PEOPLE[+b.dataset.i].name; ls('tvn-me', me); renderMain(); }; });
+    [].forEach.call(app.querySelectorAll('.people button'), function (b) { b.onclick = function () { me = PEOPLE[+b.dataset.i].name; ls('tvn-me', me); keepHash(); renderMain(); }; });
   }
   function renderMain() {
     var p = person(me), items = (state && state.items) || [];
@@ -180,7 +186,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
       showStatus();
     });
   }
+  // Keep the unlock in the address so 'Add to Home Screen' saves an already-unlocked app.
+  function keepHash() {
+    if (!pass) return;
+    var h = '#k=' + encodeURIComponent(pass) + (me ? '&me=' + encodeURIComponent(me) : '');
+    if (location.hash !== h) try { history.replaceState(null, '', h); } catch (e) { location.hash = h; }
+  }
   function start() {
+    keepHash();
     if (!cfg) return renderLock();
     if (!me) renderWho(); else renderMain();
     poll();
