@@ -114,13 +114,13 @@
     var likes = jget('tva-likes', {}), liked = [], disliked = [];
     Object.keys(likes).forEach(function (k) { (likes[k].v > 0 ? liked : disliked).push(likes[k].t); });
     var recent = jget('tva-recent', []);
-    var forWho = state.who === 0 ? ctx.me : state.who === 1 ? 'Preetham and Krishna Priya together' : 'the whole family, including a child (keep it kid-friendly)';
+    var forWho = state.who === 0 ? 'one adult (' + ctx.me + ')' : state.who === 1 ? 'Preetham and Krishna Priya together' : 'the whole family, including a child (keep it kid-friendly)';
     var sys = 'You recommend movies and series for a household in the United States. ' +
       'Their streaming apps: Netflix, Prime Video, Disney+, Hulu, Crunchyroll, aha, ZEE5. ' +
       'They watch English, Telugu, Hindi, Tamil, Malayalam, Korean (dramas and movies) and Japanese anime. ' +
       'Suggest only real, released titles that are likely streaming in the US on those apps right now. Mix well-known picks with a few lesser-known strong ones. ' +
-      'Reply with JSON only, no prose: {"picks":[{"title":"","year":2020,"type":"movie|tv","lang":"ISO 639-1 code","why":"one plain sentence under 110 characters on why it fits this request"}]} with 12 picks, best first. Use plain double quotes in JSON and no line breaks inside strings.';
-    var user = 'Request: ' + text + '\nWatching: ' + forWho +
+      'Output exactly 10 lines and nothing else (no intro, no notes), best first, each line: Title | year | movie or tv | ISO 639-1 language code | short reason under 80 characters';
+    var user = 'What they asked for: ' + text + '\nWho is watching: ' + forWho +
       (liked.length ? '\nThey liked: ' + liked.slice(-25).join('; ') : '') +
       (disliked.length ? '\nNot for them: ' + disliked.slice(-25).join('; ') : '') +
       (recent.length ? '\nAlready suggested recently, avoid repeating: ' + recent.slice(-40).join('; ') : '');
@@ -128,7 +128,7 @@
       return fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': ls('tva-ai'), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 3000, system: sys, messages: [{ role: 'user', content: user }] })
+        body: JSON.stringify({ model: MODEL, max_tokens: 900, thinking: { type: 'between_tools' }, system: sys, messages: [{ role: 'user', content: user }] })
       }).catch(function () {
         if (tries > 0) { state.busy = 'Retrying…'; render(); return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return call(tries - 1); }); }
         throw new Error('Couldn’t reach Claude. Check Wi-Fi, keep this screen open, and tap Suggest again.');
@@ -138,11 +138,12 @@
       return r.json().then(function (d) {
         if (!r.ok) throw new Error(r.status === 401 ? 'Anthropic key was rejected. Check it under Keys.' : (d.error && d.error.message) || 'AI request failed (' + r.status + ').');
         var t = (d.content || []).map(function (c) { return c.text || ''; }).join('');
-        var a = t.indexOf('{'), b = t.lastIndexOf('}');
-        try { var all = JSON.parse(t.slice(a, b + 1)).picks; if (all && all.length) return all; } catch (e) {}
-        // Fallback: read each pick on its own so one bad or cut-off entry doesn't sink the rest.
         var picks = [];
-        (t.match(/\{[^{}]*"title"[^{}]*\}/g) || []).forEach(function (m) { try { picks.push(JSON.parse(m)); } catch (e) {} });
+        t.split('\n').forEach(function (line) {
+          var f = line.split('|').map(function (x) { return x.trim(); });
+          if (f.length < 4 || !f[0] || /^title$/i.test(f[0])) return;
+          picks.push({ title: f[0].replace(/^[-*\d.\s]+/, ''), year: parseInt(f[1], 10) || '', type: /tv|series/i.test(f[2]) ? 'tv' : 'movie', lang: (f[3] || '').toLowerCase(), why: f[4] || '' });
+        });
         if (!picks.length) throw new Error('Claude’s answer came back in an unexpected format. Tap Suggest again.');
         return picks;
       });
@@ -173,8 +174,8 @@
     state.busy = 'Thinking…'; state.err = ''; state.picks = null; render();
     askClaude(text).then(function (cands) {
       state.busy = 'Checking your apps…'; render();
-      var list = cands.slice(0, 16), out = [];
-      return list.reduce(function (p, c, i) { return i % 4 ? p : p.then(function () { return Promise.all(list.slice(i, i + 4).map(resolve)).then(function (r) { out = out.concat(r); }); }); }, Promise.resolve()).then(function () { return out; });
+      var list = cands.slice(0, 12), out = [];
+      return Promise.all(list.map(resolve));
     }).then(function (list) {
       var seen = {}, out = [];
       list.forEach(function (x) { if (x && !seen[x.m + x.id]) { seen[x.m + x.id] = 1; out.push(x); } });
