@@ -85,7 +85,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
   // A personal link carries the passcode and name after '#' (never sent to any server).
   (function () {
-    var h = {}; (location.hash || '').replace(/^#/, '').split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) h[p[0]] = decodeURIComponent(p[1] || ''); });
+    var h = {}; ((location.search || '').replace(/^\?/, '') + '&' + (location.hash || '').replace(/^#/, '')).split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) h[p[0]] = decodeURIComponent(p[1] || ''); });
     if (h.k) ls('tvn-pass', h.k.trim().toLowerCase());
     if (h.me) ls('tvn-me', h.me);
   })();
@@ -189,8 +189,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   // Keep the unlock in the address so 'Add to Home Screen' saves an already-unlocked app.
   function keepHash() {
     if (!pass) return;
-    var h = '#k=' + encodeURIComponent(pass) + (me ? '&me=' + encodeURIComponent(me) : '');
-    if (location.hash !== h) try { history.replaceState(null, '', h); } catch (e) { location.hash = h; }
+    var q = '?k=' + encodeURIComponent(pass) + (me ? '&me=' + encodeURIComponent(me) : '');
+    if (location.search !== q || location.hash) try { history.replaceState(null, '', location.pathname + q); } catch (e) {}
   }
   function start() {
     keepHash();
