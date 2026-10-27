@@ -124,11 +124,17 @@
       (liked.length ? '\nThey liked: ' + liked.slice(-25).join('; ') : '') +
       (disliked.length ? '\nNot for them: ' + disliked.slice(-25).join('; ') : '') +
       (recent.length ? '\nAlready suggested recently, avoid repeating: ' + recent.slice(-40).join('; ') : '');
-    return fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': ls('tva-ai'), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 2500, system: sys, messages: [{ role: 'user', content: user }] })
-    }).then(function (r) {
+    function call(tries) {
+      return fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': ls('tva-ai'), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: MODEL, max_tokens: 1800, system: sys, messages: [{ role: 'user', content: user }] })
+      }).catch(function () {
+        if (tries > 0) { state.busy = 'Retrying…'; render(); return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return call(tries - 1); }); }
+        throw new Error('Couldn’t reach Claude. Check Wi-Fi, keep this screen open, and tap Suggest again.');
+      });
+    }
+    return call(2).then(function (r) {
       return r.json().then(function (d) {
         if (!r.ok) throw new Error(r.status === 401 ? 'Anthropic key was rejected. Check it under Keys.' : (d.error && d.error.message) || 'AI request failed (' + r.status + ').');
         var t = (d.content || []).map(function (c) { return c.text || ''; }).join('');
@@ -162,7 +168,8 @@
     state.busy = 'Thinking…'; state.err = ''; state.picks = null; render();
     askClaude(text).then(function (cands) {
       state.busy = 'Checking your apps…'; render();
-      return Promise.all(cands.slice(0, 16).map(resolve));
+      var list = cands.slice(0, 16), out = [];
+      return list.reduce(function (p, c, i) { return i % 4 ? p : p.then(function () { return Promise.all(list.slice(i, i + 4).map(resolve)).then(function (r) { out = out.concat(r); }); }); }, Promise.resolve()).then(function () { return out; });
     }).then(function (list) {
       var seen = {}, out = [];
       list.forEach(function (x) { if (x && !seen[x.m + x.id]) { seen[x.m + x.id] = 1; out.push(x); } });
