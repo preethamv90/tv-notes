@@ -95,6 +95,13 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
 <script>
 (function () {
   'use strict';
+  var VERSION = '1793065462';
+  // Reload when a newer page has been published (Home Screen apps otherwise keep an old copy).
+  function checkUpdate() {
+    if (typeof fetch !== 'function') return;
+    fetch(location.pathname + 'version.txt?_=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (v) { v = (v || '').trim(); if (v && v !== VERSION) location.reload(); }).catch(function () {});
+  }
   var PEOPLE = [{ name: 'Preetham', color: '#3a78f2' }, { name: 'Krishna Priya', color: '#e0559a' }];
   var COLORS = { yellow: 'var(--c-yellow)', blue: 'var(--c-blue)', pink: 'var(--c-pink)', green: 'var(--c-green)', red: 'var(--c-red)' };
   var MAX_ITEMS = 25, MAX_LEN = 140;
@@ -155,12 +162,15 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
     document.getElementById('who').onclick = function () { ls('tvn-me', null); me = null; renderWho(); };
     [].forEach.call(app.querySelectorAll('.seg button'), function (b) { b.onclick = function () { kind = b.dataset.k; ls('tvn-kind', kind); renderMain(); }; });
     [].forEach.call(app.querySelectorAll('.sw'), function (b) { b.onclick = function () { color = b.dataset.c; ls('tvn-color', color); renderMain(); }; });
-    var clr = document.getElementById('clr'); if (clr) clr.onclick = function () { change(function (s) { s.items = s.items.filter(function (i) { return !i.d; }); }); };
+    var clr = document.getElementById('clr'); if (clr) clr.onclick = function () { change(function (s, now) { s.items.forEach(function (i) { if (i.d) s.gone[i.id] = now; }); }); };
     [].forEach.call(app.querySelectorAll('[data-act]'), function (b) {
       b.onclick = function () {
         var i = +b.dataset.i, id = items[i] && items[i].id;
-        change(function (s) {
-          s.items = s.items.filter(function (it) { if (it.id !== id) return true; if (b.dataset.act === 'tog') { it.d = !it.d; return true; } return false; });
+        change(function (s, now) {
+          s.items.forEach(function (it) {
+            if (it.id !== id) return;
+            if (b.dataset.act === 'tog') { it.d = !it.d; it.u = now; } else s.gone[id] = now;
+          });
         });
       };
     });
@@ -168,9 +178,8 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
       e.preventDefault();
       var v = t.value.trim(); if (!v) return;
       t.value = '';
-      change(function (s) {
-        s.items.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: kind, x: v.slice(0, MAX_LEN), c: color, d: false, a: me, ts: Date.now() });
-        s.items = s.items.slice(0, MAX_ITEMS);
+      change(function (s, now) {
+        s.items.unshift({ id: now.toString(36) + Math.random().toString(36).slice(2, 6), t: kind, x: v.slice(0, MAX_LEN), c: color, d: false, a: me, ts: now, u: now });
       });
     };
   }
@@ -212,9 +221,8 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
       out.getContext('2d').drawImage(cv, 0, 0, 600, 400);
       var data = out.toDataURL('image/jpeg', 0.7);
       pad.remove();
-      change(function (s) {
-        s.items.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: 'img', img: data, a: me, ts: Date.now() });
-        var n = 0; s.items = s.items.filter(function (it) { return it.t !== 'img' || ++n <= MAX_DRAWINGS; }).slice(0, MAX_ITEMS);
+      change(function (s, now) {
+        s.items.unshift({ id: now.toString(36) + Math.random().toString(36).slice(2, 6), t: 'img', img: data, a: me, ts: now, u: now });
       });
     };
     redraw();
@@ -224,37 +232,46 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
     el.className = 'status' + (syncErr ? ' bad' : '');
     el.innerHTML = '<span class="dot"></span>' + (busy ? 'Saving…' : syncErr ? 'Can’t reach the TV channel. Check your connection.' : lastSync ? 'On the TV · synced ' + ago(lastSync) : 'Connecting…');
   }
-  // Read the newest state, apply the change, publish the whole list (encrypted).
+  // Merge everything on the channel with this phone's copy, apply the change, publish.
+  function trim(s, now) {
+    var n = 0, k = 0;
+    s.items.forEach(function (it) {
+      if (s.gone[it.id]) return;
+      if (it.t === 'img' && ++n > MAX_DRAWINGS) s.gone[it.id] = now;
+      else if (++k > MAX_ITEMS) s.gone[it.id] = now;
+    });
+    s.items = s.items.filter(function (it) { return !s.gone[it.id]; });
+  }
   function change(fn) {
     busy = true; showStatus();
-    TVNotes.fetchLatest(cfg, function (err, latest) {
-      var s = latest || state || { v: 1, rev: 0, items: [] };
-      if (state && (!latest || state.rev > latest.rev)) s = state;
-      s = JSON.parse(JSON.stringify(s)); s.items = s.items || [];
-      fn(s); s.v = 1; s.rev = Date.now(); s.by = me;
+    TVNotes.fetchMerged(cfg, state ? [state] : [], function (err, merged) {
+      var s = JSON.parse(JSON.stringify(merged || TVNotes.merge(state ? [state] : [])));
+      s.gone = s.gone || {};
+      var now = Date.now();
+      fn(s, now); trim(s, now);
+      s.v = 1; s.rev = now; s.by = me;
       TVNotes.publish(cfg, s, function (e2) {
         busy = false; syncErr = !!e2;
-        if (!e2) { state = s; lastSync = Date.now(); ls('tvn-cache', JSON.stringify(s)); }
+        state = s; ls('tvn-cache', JSON.stringify(s));
+        if (!e2) lastSync = Date.now();
         renderMain();
       });
     });
   }
+  function same(a, b) { return JSON.stringify((a || {}).items || []) === JSON.stringify((b || {}).items || []); }
   function poll() {
     if (!cfg || busy) return;
-    TVNotes.fetchLatest(cfg, function (err, latest) {
+    TVNotes.fetchMerged(cfg, state ? [state] : [], function (err, merged) {
       syncErr = !!err;
       if (!err) {
         lastSync = Date.now();
-        if (latest && (!state || latest.rev > state.rev)) { state = latest; ls('tvn-cache', JSON.stringify(state)); if (me && document.activeElement !== document.getElementById('txt')) renderMain(); }
+        if (!same(merged, state)) {
+          state = merged; ls('tvn-cache', JSON.stringify(state));
+          if (me && document.activeElement !== document.getElementById('txt')) renderMain();
+        }
       }
       showStatus();
     });
-  }
-  // Keep the unlock in the address so 'Add to Home Screen' saves an already-unlocked app.
-  function keepHash() {
-    if (!pass) return;
-    var q = '?k=' + encodeURIComponent(pass) + (me ? '&me=' + encodeURIComponent(me) : '');
-    if (location.search !== q || location.hash) try { history.replaceState(null, '', location.pathname + q); } catch (e) {}
   }
   function start() {
     keepHash();
@@ -265,7 +282,8 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
   start();
   setInterval(poll, 8000);
   setInterval(showStatus, 30000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { checkUpdate(); poll(); } });
+  checkUpdate();
 })();
 </script>
 </body>

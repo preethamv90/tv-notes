@@ -38,10 +38,31 @@
     x.onerror = x.ontimeout = function () { cb('offline'); };
     x.send(body || null);
   }
-  // Latest state that decrypts with our key. Big states (with drawings) arrive as ntfy
-  // attachments; each is downloaded once and remembered by message id.
-  var seen = {}; // message id -> decrypted state, or false if not ours
-  function fetchLatest(cfg, cb) {
+  // Every message on the channel is a full snapshot from one phone (or the TV).
+  // Snapshots are MERGED, never replaced: items by id (newest edit wins), deletions
+  // kept as tombstones, so a phone that is behind can never erase anyone's notes.
+  var seen = {}; // message id -> decrypted snapshot, or false if not ours
+  var KEEP_GONE_MS = 4 * 86400000;
+  function merge(list) {
+    var items = {}, gone = {}, rev = 0;
+    list.forEach(function (st) {
+      if (!st) return;
+      rev = Math.max(rev, st.rev || 0);
+      var g = st.gone || {};
+      Object.keys(g).forEach(function (id) { if (!gone[id] || g[id] > gone[id]) gone[id] = g[id]; });
+      (st.items || []).forEach(function (it) {
+        var u = it.u || it.ts || 0, cur = items[it.id];
+        if (!cur || u > (cur.u || cur.ts || 0)) items[it.id] = it;
+      });
+    });
+    var now = Date.now();
+    Object.keys(gone).forEach(function (id) { if (now - gone[id] > KEEP_GONE_MS) delete gone[id]; });
+    var out = Object.keys(items).map(function (id) { return items[id]; })
+      .filter(function (it) { return !gone[it.id] || gone[it.id] < (it.u || it.ts || 0); })
+      .sort(function (x, y) { return (y.ts || 0) - (x.ts || 0); });
+    return { v: 1, rev: rev, items: out, gone: gone };
+  }
+  function fetchMerged(cfg, extra, cb) {
     req('GET', 'https://ntfy.sh/' + cfg.topic + '/json?poll=1&since=all', null, function (err, txt) {
       if (err) return cb(err);
       var msgs = [];
@@ -49,23 +70,24 @@
         if (!line) return; var m; try { m = JSON.parse(line); } catch (e) { return; }
         if (m.event === 'message') msgs.push(m);
       });
-      msgs.sort(function (x, y) { return y.time - x.time; });
-      var i = 0;
+      var i = 0, found = [];
       (function next() {
-        if (i >= msgs.length) return cb(null, null);
+        if (i >= msgs.length) return cb(null, merge(found.concat(extra || [])), found.length);
         var m = msgs[i++];
-        if (m.id in seen) { if (seen[m.id]) return cb(null, seen[m.id]); return next(); }
+        if (m.id in seen) { if (seen[m.id]) found.push(seen[m.id]); return next(); }
         if (!m.attachment) {
           var st = open(m.message, cfg.key);
           seen[m.id] = st && st.v === 1 ? st : false;
-          return seen[m.id] ? cb(null, seen[m.id]) : next();
+          if (seen[m.id]) found.push(seen[m.id]);
+          return next();
         }
         if (m.attachment.expires && m.attachment.expires * 1000 < Date.now()) { seen[m.id] = false; return next(); }
         req('GET', m.attachment.url, null, function (e2, body) {
           if (e2) return next();
           var st2 = open((body || '').trim(), cfg.key);
           seen[m.id] = st2 && st2.v === 1 ? st2 : false;
-          return seen[m.id] ? cb(null, seen[m.id]) : next();
+          if (seen[m.id]) found.push(seen[m.id]);
+          next();
         });
       })();
     });
@@ -73,5 +95,5 @@
   function publish(cfg, state, cb) {
     req('POST', 'https://ntfy.sh/' + cfg.topic, seal(state, cfg.key), function (err) { cb && cb(err); });
   }
-  g.TVNotes = { derive: derive, fetchLatest: fetchLatest, publish: publish };
+  g.TVNotes = { derive: derive, fetchMerged: fetchMerged, merge: merge, publish: publish };
 })(this);
