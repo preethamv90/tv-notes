@@ -30,19 +30,36 @@
     x.onerror = x.ontimeout = function () { cb('offline'); };
     x.send(body || null);
   }
-  // Latest state that decrypts with our key (anything else on the channel is ignored).
+  // Latest state that decrypts with our key. Big states (with drawings) arrive as ntfy
+  // attachments; each is downloaded once and remembered by message id.
+  var seen = {}; // message id -> decrypted state, or false if not ours
   function fetchLatest(cfg, cb) {
     req('GET', 'https://ntfy.sh/' + cfg.topic + '/json?poll=1&since=all&t=' + Date.now(), null, function (err, txt) {
       if (err) return cb(err);
-      var best = null;
+      var msgs = [];
       (txt || '').split('\n').forEach(function (line) {
-        if (!line) return;
-        var m; try { m = JSON.parse(line); } catch (e) { return; }
-        if (m.event !== 'message') return;
-        var st = open(m.message, cfg.key);
-        if (st && st.v === 1 && (!best || st.rev >= best.rev)) best = st;
+        if (!line) return; var m; try { m = JSON.parse(line); } catch (e) { return; }
+        if (m.event === 'message') msgs.push(m);
       });
-      cb(null, best);
+      msgs.sort(function (x, y) { return y.time - x.time; });
+      var i = 0;
+      (function next() {
+        if (i >= msgs.length) return cb(null, null);
+        var m = msgs[i++];
+        if (m.id in seen) { if (seen[m.id]) return cb(null, seen[m.id]); return next(); }
+        if (!m.attachment) {
+          var st = open(m.message, cfg.key);
+          seen[m.id] = st && st.v === 1 ? st : false;
+          return seen[m.id] ? cb(null, seen[m.id]) : next();
+        }
+        if (m.attachment.expires && m.attachment.expires * 1000 < Date.now()) { seen[m.id] = false; return next(); }
+        req('GET', m.attachment.url, null, function (e2, body) {
+          if (e2) return next();
+          var st2 = open((body || '').trim(), cfg.key);
+          seen[m.id] = st2 && st2.v === 1 ? st2 : false;
+          return seen[m.id] ? cb(null, seen[m.id]) : next();
+        });
+      })();
     });
   }
   function publish(cfg, state, cb) {
