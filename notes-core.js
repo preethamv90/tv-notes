@@ -24,6 +24,14 @@
     } catch (e) { return null; }
   }
   function req(method, url, body, cb) {
+    // Prefer fetch: some TV browsers return an empty body to XHR for streamed replies.
+    if (typeof fetch === 'function') {
+      var done = false, timer = setTimeout(function () { if (!done) { done = true; cb('timeout'); } }, 20000);
+      fetch(url, { method: method, body: body || undefined, cache: 'no-store' }).then(function (r) {
+        return r.text().then(function (t) { if (done) return; done = true; clearTimeout(timer); cb(r.ok ? null : r.status, t); });
+      }).catch(function (e) { if (done) return; done = true; clearTimeout(timer); cb('offline'); });
+      return;
+    }
     var x = new XMLHttpRequest();
     x.open(method, url, true); x.timeout = 20000;
     x.onload = function () { cb(x.status >= 200 && x.status < 300 ? null : x.status, x.responseText); };
