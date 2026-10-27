@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TV Notes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon.png">
+<title>TV Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Layout: one column, composer pinned at the bottom like a messaging app; list above. */
+:root {
+  --bg: #f3f1ee; --surface: #ffffff; --surface-2: #ebe8e3; --fg: #1b1c22; --muted: #6b6a72; --line: #dcd8d1;
+  --accent: #2f5bd6; --onaccent: #fff; --danger: #c43d3d;
+  --c-yellow: #e9b008; --c-blue: #3a78f2; --c-pink: #e0559a; --c-green: #23a865; --c-red: #e2483d; --c-plain: #9a98a3;
+  --font: "Figtree", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root { --bg: #111217; --surface: #1c1d24; --surface-2: #26272f; --fg: #f1f0ee; --muted: #9b9aa4; --line: #2f3039; --accent: #6f95ff; --onaccent: #0d0f17; color-scheme: dark; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.4 var(--font); -webkit-font-smoothing: antialiased; }
+.app { max-width: 560px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-size: 28px; font-weight: 800; margin: 0; letter-spacing: -0.5px; }
+.who { display: flex; align-items: center; gap: 8px; border: 0; background: var(--surface-2); color: var(--fg); padding: 6px 12px 6px 6px; border-radius: 999px; font: 600 14px var(--font); }
+.av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 14px; }
+.status { font-size: 13px; color: var(--muted); margin: 6px 0 14px; min-height: 18px; }
+.status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c-green); margin-right: 6px; vertical-align: 1px; }
+.status.bad .dot { background: var(--c-red); }
+ul { list-style: none; margin: 0; padding: 0 0 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+li { display: flex; align-items: flex-start; gap: 12px; background: var(--surface); border-radius: 16px; padding: 12px 12px 12px 0; border: 1px solid var(--line); overflow: hidden; }
+li .edge { width: 6px; align-self: stretch; border-radius: 0 4px 4px 0; flex: 0 0 auto; }
+li .mark { flex: 0 0 auto; width: 24px; height: 24px; margin-top: 1px; display: grid; place-items: center; }
+li .bullet { width: 8px; height: 8px; border-radius: 50%; }
+li .check { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--muted); background: transparent; padding: 0; display: grid; place-items: center; color: #fff; }
+li.done .check { border-color: transparent; }
+li .body { flex: 1; min-width: 0; }
+li .text { font-size: 17px; font-weight: 600; word-wrap: break-word; }
+li.note .text { font-weight: 500; }
+li.done .text { text-decoration: line-through; color: var(--muted); }
+li .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+li .del { border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 8px; }
+.empty { text-align: center; color: var(--muted); padding: 40px 12px; background: var(--surface); border: 1px dashed var(--line); border-radius: 16px; }
+.tools { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.link { border: 0; background: none; color: var(--accent); font: 600 14px var(--font); padding: 6px 4px; }
+.composer { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 calc(env(safe-area-inset-bottom, 0px) + 12px); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 3px; }
+.seg button { border: 0; background: transparent; color: var(--fg); font: 600 14px var(--font); padding: 7px 12px; border-radius: 9px; }
+.seg button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.swatches { display: flex; gap: 8px; margin-left: auto; }
+.sw { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; }
+.sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--fg); }
+.input { display: flex; gap: 8px; }
+.input input { flex: 1; min-width: 0; font: 17px var(--font); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.input button, .primary { border: 0; background: var(--accent); color: var(--onaccent); font: 700 16px var(--font); border-radius: 14px; padding: 0 18px; min-height: 46px; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lock { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding-bottom: 20vh; }
+.lock p { color: var(--muted); margin: 0; }
+.people { display: flex; gap: 10px; flex-wrap: wrap; }
+.people button { flex: 1; min-width: 140px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: 700 16px var(--font); padding: 12px; border-radius: 14px; }
+.err { color: var(--danger); font-size: 14px; min-height: 18px; }
+@media (prefers-reduced-motion: no-preference) { li { animation: in .18s ease-out; } @keyframes in { from { opacity: 0; transform: translateY(4px); } } }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script src="nacl-fast.min.js"></script>
+<script src="nacl-util.min.js"></script>
+<script src="notes-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  var PEOPLE = [{ name: 'Preetham', color: '#3a78f2' }, { name: 'Krishna Priya', color: '#e0559a' }];
+  var COLORS = { yellow: 'var(--c-yellow)', blue: 'var(--c-blue)', pink: 'var(--c-pink)', green: 'var(--c-green)', red: 'var(--c-red)' };
+  var MAX_ITEMS = 25, MAX_LEN = 140;
+  var app = document.getElementById('app');
+  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
+  var pass = ls('tvn-pass'), me = ls('tvn-me'), cfg = pass ? TVNotes.derive(pass) : null;
+  var state = null, lastSync = 0, syncErr = false, kind = ls('tvn-kind') || 'todo', color = ls('tvn-color') || 'yellow', busy = false;
+  try { state = JSON.parse(ls('tvn-cache') || 'null'); } catch (e) {}
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function person(n) { for (var i = 0; i < PEOPLE.length; i++) if (PEOPLE[i].name === n) return PEOPLE[i]; return { name: n || '?', color: '#888' }; }
+  function ago(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' hr ago'; }
+
+  function renderLock() {
+    app.innerHTML = '<div class="lock"><h1>TV Notes</h1><p>Enter your household passcode. You only need to do this once on this phone.</p>' +
+      '<form class="input" id="pf"><input id="pin" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="passcode"><button>Unlock</button></form><div class="err" id="perr"></div></div>';
+    document.getElementById('pf').onsubmit = function (e) {
+      e.preventDefault();
+      var v = document.getElementById('pin').value.trim().toLowerCase();
+      if (v.split('-').length < 4) { document.getElementById('perr').textContent = 'That doesn’t look like your passcode. It has four words and a number, joined by dashes.'; return; }
+      ls('tvn-pass', v); pass = v; cfg = TVNotes.derive(v); state = null; ls('tvn-cache', null); start();
+    };
+  }
+  function renderWho() {
+    app.innerHTML = '<div class="lock"><h1>Who’s this?</h1><p>Notes you add will be marked with your color.</p><div class="people">' +
+      PEOPLE.map(function (p, i) { return '<button data-i="' + i + '"><span class="av" style="background:' + p.color + '">' + p.name[0] + '</span>' + esc(p.name) + '</button>'; }).join('') + '</div></div>';
+    [].forEach.call(app.querySelectorAll('.people button'), function (b) { b.onclick = function () { me = PEOPLE[+b.dataset.i].name; ls('tvn-me', me); renderMain(); }; });
+  }
+  function renderMain() {
+    var p = person(me), items = (state && state.items) || [];
+    var draft = (document.getElementById('txt') || {}).value || '';
+    app.innerHTML =
+      '<header><h1>TV Notes</h1><button class="who" id="who"><span class="av" style="background:' + p.color + '">' + esc(p.name[0]) + '</span>' + esc(p.name) + '</button></header>' +
+      '<div class="status' + (syncErr ? ' bad' : '') + '" id="st"></div>' +
+      (items.some(function (i) { return i.d; }) ? '<div class="tools"><button class="link" id="clr">Clear completed</button></div>' : '') +
+      (items.length ? '<ul id="list">' + items.map(function (it, idx) {
+        var col = COLORS[it.c] || 'var(--c-plain)', author = person(it.a);
+        var mark = it.t === 'todo' ? '<button class="check" data-act="tog" data-i="' + idx + '" aria-label="' + (it.d ? 'Mark not done' : 'Mark done') + '" style="' + (it.d ? 'background:' + col : '') + '">' + (it.d ? '✓' : '') + '</button>'
+          : it.t === 'bullet' ? '<span class="bullet" style="background:' + col + '"></span>' : '';
+        return '<li class="' + it.t + (it.d ? ' done' : '') + '"><span class="edge" style="background:' + col + '"></span><span class="mark">' + mark + '</span>' +
+          '<div class="body"><div class="text">' + esc(it.x) + '</div><div class="meta">' + esc(author.name.split(' ')[0]) + ' · ' + ago(it.ts) + '</div></div>' +
+          '<button class="del" data-act="del" data-i="' + idx + '" aria-label="Delete">×</button></li>';
+      }).join('') + '</ul>' : '<ul><div class="empty">Nothing on the TV yet. Add a note below.</div></ul>') +
+      '<div class="composer"><div class="row"><div class="seg" role="group" aria-label="Type">' +
+      [['note', 'Note'], ['bullet', '• Bullet'], ['todo', '☐ To-do']].map(function (k) { return '<button data-k="' + k[0] + '" aria-pressed="' + (kind === k[0]) + '">' + k[1] + '</button>'; }).join('') +
+      '</div><div class="swatches" role="group" aria-label="Color">' +
+      Object.keys(COLORS).map(function (c) { return '<button class="sw" data-c="' + c + '" aria-label="' + c + '" aria-pressed="' + (color === c) + '" style="background:' + COLORS[c] + '"></button>'; }).join('') +
+      '</div></div><form class="input" id="f"><input id="txt" maxlength="' + MAX_LEN + '" placeholder="Add to the TV…" autocomplete="off" enterkeyhint="send"><button>Add</button></form></div>';
+    var t = document.getElementById('txt'); t.value = draft;
+    showStatus();
+    document.getElementById('who').onclick = function () { ls('tvn-me', null); me = null; renderWho(); };
+    [].forEach.call(app.querySelectorAll('.seg button'), function (b) { b.onclick = function () { kind = b.dataset.k; ls('tvn-kind', kind); renderMain(); }; });
+    [].forEach.call(app.querySelectorAll('.sw'), function (b) { b.onclick = function () { color = b.dataset.c; ls('tvn-color', color); renderMain(); }; });
+    var clr = document.getElementById('clr'); if (clr) clr.onclick = function () { change(function (s) { s.items = s.items.filter(function (i) { return !i.d; }); }); };
+    [].forEach.call(app.querySelectorAll('[data-act]'), function (b) {
+      b.onclick = function () {
+        var i = +b.dataset.i, id = items[i] && items[i].id;
+        change(function (s) {
+          s.items = s.items.filter(function (it) { if (it.id !== id) return true; if (b.dataset.act === 'tog') { it.d = !it.d; return true; } return false; });
+        });
+      };
+    });
+    document.getElementById('f').onsubmit = function (e) {
+      e.preventDefault();
+      var v = t.value.trim(); if (!v) return;
+      t.value = '';
+      change(function (s) {
+        s.items.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: kind, x: v.slice(0, MAX_LEN), c: color, d: false, a: me, ts: Date.now() });
+        s.items = s.items.slice(0, MAX_ITEMS);
+      });
+    };
+  }
+  function showStatus() {
+    var el = document.getElementById('st'); if (!el) return;
+    el.className = 'status' + (syncErr ? ' bad' : '');
+    el.innerHTML = '<span class="dot"></span>' + (busy ? 'Saving…' : syncErr ? 'Can’t reach the TV channel. Check your connection.' : lastSync ? 'On the TV · synced ' + ago(lastSync) : 'Connecting…');
+  }
+  // Read the newest state, apply the change, publish the whole list (encrypted).
+  function change(fn) {
+    busy = true; showStatus();
+    TVNotes.fetchLatest(cfg, function (err, latest) {
+      var s = latest || state || { v: 1, rev: 0, items: [] };
+      if (state && (!latest || state.rev > latest.rev)) s = state;
+      s = JSON.parse(JSON.stringify(s)); s.items = s.items || [];
+      fn(s); s.v = 1; s.rev = Date.now(); s.by = me;
+      TVNotes.publish(cfg, s, function (e2) {
+        busy = false; syncErr = !!e2;
+        if (!e2) { state = s; lastSync = Date.now(); ls('tvn-cache', JSON.stringify(s)); }
+        renderMain();
+      });
+    });
+  }
+  function poll() {
+    if (!cfg || busy) return;
+    TVNotes.fetchLatest(cfg, function (err, latest) {
+      syncErr = !!err;
+      if (!err) {
+        lastSync = Date.now();
+        if (latest && (!state || latest.rev > state.rev)) { state = latest; ls('tvn-cache', JSON.stringify(state)); if (me && document.activeElement !== document.getElementById('txt')) renderMain(); }
+      }
+      showStatus();
+    });
+  }
+  function start() {
+    if (!cfg) return renderLock();
+    if (!me) renderWho(); else renderMain();
+    poll();
+  }
+  start();
+  setInterval(poll, 8000);
+  setInterval(showStatus, 30000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+})();
+</script>
+</body>
+</html>
