@@ -67,6 +67,7 @@
     document.getElementById('ago').onclick = suggest;
     [].forEach.call(app.querySelectorAll('[data-rate]'), function (b) { b.onclick = function () { rate(+b.dataset.i, +b.dataset.rate); }; });
     var as = document.getElementById('as'); if (as) as.onclick = sendToTV;
+    [].forEach.call(app.querySelectorAll('[data-play]'), function (b) { b.onclick = function () { playOnTV(+b.dataset.play, b); }; });
   }
 
   function card(x, i) {
@@ -76,6 +77,7 @@
       (x.app ? '<span class="svc">' + esc(x.app) + '</span>' : '<span class="svc unk">Where to watch: Unknown · try aha / ZEE5</span>') +
       '<div class="why">' + esc(x.why) + '</div>' +
       '<div class="acts"><button data-rate="1" data-i="' + i + '" aria-pressed="' + (v === 1) + '">Like</button><button data-rate="-1" data-i="' + i + '" aria-pressed="' + (v === -1) + '">Not for me</button>' +
+      '<button data-play="' + i + '">' + (x.app ? 'Play on TV' : 'Open aha on TV') + '</button>' +
       '<a href="https://www.justwatch.com/us/search?q=' + encodeURIComponent(x.t) + '" target="_blank" rel="noopener">JustWatch</a></div></div></div>';
   }
 
@@ -190,6 +192,16 @@
     var x = state.picks[i], likes = jget('tva-likes', {}), k = x.m + x.id;
     if (likes[k] && likes[k].v === v) delete likes[k]; else likes[k] = { t: x.t + (x.y ? ' (' + x.y + ')' : ''), v: v };
     ls('tva-likes', JSON.stringify(likes)); render();
+  }
+
+  function playOnTV(i, b) {
+    var x = state.picks[i], name = x.app || 'aha';
+    b.textContent = 'Sending…';
+    TVNotes.publishAny(TVNotes.derive(ctx.pass + '|play'), { v: 4, app: name, title: x.t, at: Date.now() }, function (err) {
+      if (err) { b.textContent = 'Couldn’t reach TV'; return; }
+      b.textContent = name + ' opening on TV';
+      try { navigator.clipboard.writeText(x.t); } catch (e) {}
+    });
   }
 
   function sendToTV() {
