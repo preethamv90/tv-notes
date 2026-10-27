@@ -89,18 +89,25 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
 </head>
 <body>
 <div class="app" id="app"></div>
-<script src="nacl-fast.min.js"></script>
-<script src="nacl-util.min.js"></script>
-<script src="notes-core.js"></script>
+<script src="nacl-fast.min.js?v=1793065993"></script>
+<script src="nacl-util.min.js?v=1793065993"></script>
+<script src="notes-core.js?v=1793065993"></script>
 <script>
 (function () {
   'use strict';
-  var VERSION = '1793065462';
+  var VERSION = '1793065993';
   // Reload when a newer page has been published (Home Screen apps otherwise keep an old copy).
   function checkUpdate() {
     if (typeof fetch !== 'function') return;
     fetch(location.pathname + 'version.txt?_=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; })
-      .then(function (v) { v = (v || '').trim(); if (v && v !== VERSION) location.reload(); }).catch(function () {});
+      .then(function (v) {
+        v = (v || '').trim(); if (!v || v === VERSION) return;
+        // Reload once per new version, with the version in the address so the cache can't serve the old page.
+        if (ls('tvn-reloaded') === v) return;
+        ls('tvn-reloaded', v);
+        var q = location.search.replace(/[?&]v=[^&]*/g, '').replace(/^&/, '?');
+        location.replace(location.pathname + (q && q !== '?' ? q + '&' : '?') + 'v=' + v);
+      }).catch(function () {});
   }
   var PEOPLE = [{ name: 'Preetham', color: '#3a78f2' }, { name: 'Krishna Priya', color: '#e0559a' }];
   var COLORS = { yellow: 'var(--c-yellow)', blue: 'var(--c-blue)', pink: 'var(--c-pink)', green: 'var(--c-green)', red: 'var(--c-red)' };
@@ -272,6 +279,12 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
       }
       showStatus();
     });
+  }
+  // Keep the unlock in the address so 'Add to Home Screen' saves an already-unlocked app.
+  function keepHash() {
+    if (!pass) return;
+    var q = '?k=' + encodeURIComponent(pass) + (me ? '&me=' + encodeURIComponent(me) : '');
+    if (location.search !== q || location.hash) try { history.replaceState(null, '', location.pathname + q); } catch (e) {}
   }
   function start() {
     keepHash();
