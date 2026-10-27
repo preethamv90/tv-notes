@@ -119,7 +119,7 @@
       'Their streaming apps: Netflix, Prime Video, Disney+, Hulu, Crunchyroll, aha, ZEE5. ' +
       'They watch English, Telugu, Hindi, Tamil, Malayalam, Korean (dramas and movies) and Japanese anime. ' +
       'Suggest only real, released titles that are likely streaming in the US on those apps right now. Mix well-known picks with a few lesser-known strong ones. ' +
-      'Reply with JSON only, no prose: {"picks":[{"title":"","year":2020,"type":"movie|tv","lang":"ISO 639-1 code","why":"one plain sentence under 110 characters on why it fits this request"}]} with 14 picks, best first.';
+      'Reply with JSON only, no prose: {"picks":[{"title":"","year":2020,"type":"movie|tv","lang":"ISO 639-1 code","why":"one plain sentence under 110 characters on why it fits this request"}]} with 12 picks, best first. Use plain double quotes in JSON and no line breaks inside strings.';
     var user = 'Request: ' + text + '\nWatching: ' + forWho +
       (liked.length ? '\nThey liked: ' + liked.slice(-25).join('; ') : '') +
       (disliked.length ? '\nNot for them: ' + disliked.slice(-25).join('; ') : '') +
@@ -128,7 +128,7 @@
       return fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': ls('tva-ai'), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 1800, system: sys, messages: [{ role: 'user', content: user }] })
+        body: JSON.stringify({ model: MODEL, max_tokens: 3000, system: sys, messages: [{ role: 'user', content: user }] })
       }).catch(function () {
         if (tries > 0) { state.busy = 'Retrying…'; render(); return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return call(tries - 1); }); }
         throw new Error('Couldn’t reach Claude. Check Wi-Fi, keep this screen open, and tap Suggest again.');
@@ -139,7 +139,12 @@
         if (!r.ok) throw new Error(r.status === 401 ? 'Anthropic key was rejected. Check it under Keys.' : (d.error && d.error.message) || 'AI request failed (' + r.status + ').');
         var t = (d.content || []).map(function (c) { return c.text || ''; }).join('');
         var a = t.indexOf('{'), b = t.lastIndexOf('}');
-        return JSON.parse(t.slice(a, b + 1)).picks || [];
+        try { var all = JSON.parse(t.slice(a, b + 1)).picks; if (all && all.length) return all; } catch (e) {}
+        // Fallback: read each pick on its own so one bad or cut-off entry doesn't sink the rest.
+        var picks = [];
+        (t.match(/\{[^{}]*"title"[^{}]*\}/g) || []).forEach(function (m) { try { picks.push(JSON.parse(m)); } catch (e) {} });
+        if (!picks.length) throw new Error('Claude’s answer came back in an unexpected format. Tap Suggest again.');
+        return picks;
       });
     });
   }
