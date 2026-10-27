@@ -89,13 +89,14 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
 </head>
 <body>
 <div class="app" id="app"></div>
-<script src="nacl-fast.min.js?v=1793065993"></script>
-<script src="nacl-util.min.js?v=1793065993"></script>
-<script src="notes-core.js?v=1793065993"></script>
+<script src="nacl-fast.min.js?v=1793122955"></script>
+<script src="nacl-util.min.js?v=1793122955"></script>
+<script src="notes-core.js?v=1793122955"></script>
+<script src="ask.js?v=1793122955"></script>
 <script>
 (function () {
   'use strict';
-  var VERSION = '1793065993';
+  var VERSION = '1793122955';
   // Reload when a newer page has been published (Home Screen apps otherwise keep an old copy).
   function checkUpdate() {
     if (typeof fetch !== 'function') return;
@@ -146,7 +147,7 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
     var p = person(me), items = (state && state.items) || [];
     var draft = (document.getElementById('txt') || {}).value || '';
     app.innerHTML =
-      '<header><h1>TV Notes</h1><button class="who" id="who"><span class="av" style="background:' + p.color + '">' + esc(p.name[0]) + '</span>' + esc(p.name) + '</button></header>' +
+      '<header><h1>TV Notes</h1><button class="link" id="watch" style="margin-left:auto">Watch</button><button class="who" id="who"><span class="av" style="background:' + p.color + '">' + esc(p.name[0]) + '</span>' + esc(p.name) + '</button></header>' +
       '<div class="status' + (syncErr ? ' bad' : '') + '" id="st"></div>' +
       (items.some(function (i) { return i.d; }) ? '<div class="tools"><button class="link" id="clr">Clear completed</button></div>' : '') +
       (items.length ? '<ul id="list">' + items.map(function (it, idx) {
@@ -166,6 +167,7 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
     var t = document.getElementById('txt'); t.value = draft;
     showStatus();
     document.getElementById('drawbtn').onclick = openPad;
+    document.getElementById('watch').onclick = function () { TVAsk.open({ pass: pass, me: me, back: function () { TVAsk.active = false; renderMain(); } }); };
     document.getElementById('who').onclick = function () { ls('tvn-me', null); me = null; renderWho(); };
     [].forEach.call(app.querySelectorAll('.seg button'), function (b) { b.onclick = function () { kind = b.dataset.k; ls('tvn-kind', kind); renderMain(); }; });
     [].forEach.call(app.querySelectorAll('.sw'), function (b) { b.onclick = function () { color = b.dataset.c; ls('tvn-color', color); renderMain(); }; });
@@ -274,7 +276,7 @@ li.img .imgmeta { display: flex; justify-content: space-between; align-items: ce
         lastSync = Date.now();
         if (!same(merged, state)) {
           state = merged; ls('tvn-cache', JSON.stringify(state));
-          if (me && document.activeElement !== document.getElementById('txt')) renderMain();
+          if (me && !(window.TVAsk && TVAsk.active) && document.activeElement !== document.getElementById('txt')) renderMain();
         }
       }
       showStatus();

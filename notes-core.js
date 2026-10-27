@@ -95,5 +95,23 @@
   function publish(cfg, state, cb) {
     req('POST', 'https://ntfy.sh/' + cfg.topic, seal(state, cfg.key), function (err) { cb && cb(err); });
   }
-  g.TVNotes = { derive: derive, fetchMerged: fetchMerged, merge: merge, publish: publish };
+  // Newest message on a channel that decrypts to version v (used for watch picks).
+  function latest(cfg, v, cb) {
+    req('GET', 'https://ntfy.sh/' + cfg.topic + '/json?poll=1&since=all', null, function (err, txt) {
+      if (err) return cb(err);
+      var msgs = [];
+      (txt || '').split('\n').forEach(function (line) { if (!line) return; try { var m = JSON.parse(line); if (m.event === 'message') msgs.push(m); } catch (e) {} });
+      var i = msgs.length - 1;
+      (function next() {
+        if (i < 0) return cb(null, null);
+        var m = msgs[i--];
+        if (!m.attachment) { var st = open(m.message, cfg.key); return st && st.v === v ? cb(null, st) : next(); }
+        req('GET', m.attachment.url, null, function (e2, body) { var st2 = e2 ? null : open((body || '').trim(), cfg.key); return st2 && st2.v === v ? cb(null, st2) : next(); });
+      })();
+    });
+  }
+  function publishAny(cfg, obj, cb) {
+    req('POST', 'https://ntfy.sh/' + cfg.topic, seal(obj, cfg.key), function (err) { cb && cb(err); });
+  }
+  g.TVNotes = { derive: derive, fetchMerged: fetchMerged, merge: merge, publish: publish, latest: latest, publishAny: publishAny };
 })(this);
