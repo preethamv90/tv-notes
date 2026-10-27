@@ -39,7 +39,13 @@
 
   function hasKeys() { return !!(ls('tva-tmdb') && ls('tva-ai')); }
 
-  function open(c) { ctx = c; g.TVAsk.active = true; app = document.getElementById('app'); state.who = +(ls('tva-who') || 0); render(); }
+  function open(c) {
+    ctx = c; g.TVAsk.active = true; app = document.getElementById('app'); state.who = +(ls('tva-who') || 0);
+    if (hasKeys()) return render();
+    app.innerHTML = '<header><button class="link" id="kn">‹ Notes</button><h1>Watch</h1><span></span></header><div class="empty">Getting the keys from your TV…</div>';
+    document.getElementById('kn').onclick = function () { ctx.back(); };
+    fromTV(function () { if (g.TVAsk.active) render(); });
+  }
 
   function render() {
     if (!hasKeys()) return renderKeys();
@@ -73,13 +79,22 @@
       '<a href="https://www.justwatch.com/us/search?q=' + encodeURIComponent(x.t) + '" target="_blank" rel="noopener">JustWatch</a></div></div></div>';
   }
 
+  function fromTV(done) {
+    TVNotes.latest(TVNotes.derive(ctx.pass + '|keys'), 3, function (err, k) {
+      if (k && k.tmdb && k.ai) { ls('tva-tmdb', k.tmdb); ls('tva-ai', k.ai); }
+      done(!!(k && k.tmdb && k.ai));
+    });
+  }
+
   function renderKeys() {
     app.innerHTML = '<header>' + (hasKeys() ? '<button class="link" id="kb">‹ Watch</button>' : '<button class="link" id="kn">‹ Notes</button>') + '<h1>Watch setup</h1><span></span></header>' +
-      '<p class="ask-note">Paste the two keys once. They stay on this phone only and are never sent anywhere except TMDB and Anthropic.</p>' +
+      '<p class="ask-note">Keys normally come from the TV automatically: turn the TV on with the Home app open, then tap Get from TV. Or paste them here. They are only sent to TMDB and Anthropic.</p>' +
+      '<button class="primary ask-go" id="kg" type="button">Get from TV</button>' +
       '<form class="ask-keys" id="kf"><label for="kt">TMDB read access token</label><input id="kt" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(ls('tva-tmdb') || '') + '">' +
       '<label for="ka">Anthropic API key</label><input id="ka" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(ls('tva-ai') || '') + '">' +
       '<button class="primary ask-go">Save</button></form>';
     var kb = document.getElementById('kb'); if (kb) kb.onclick = render;
+    document.getElementById('kg').onclick = function () { var b = this; b.textContent = 'Checking…'; fromTV(function (ok) { if (ok) render(); else b.textContent = 'Not found yet. Make sure the TV is on, then try again.'; }); };
     var kn = document.getElementById('kn'); if (kn) kn.onclick = function () { ctx.back(); };
     document.getElementById('kf').onsubmit = function (e) {
       e.preventDefault();
