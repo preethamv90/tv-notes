@@ -7,6 +7,10 @@
   var WHO = ['Me', 'Both of us', 'Family'];
   var QUICK = ['Something for tonight', 'Telugu movie', 'Tamil or Malayalam thriller', 'K-drama to binge', 'Korean movie', 'Anime series', 'Light comedy', 'Hindi movie'];
   var IMG = 'https://image.tmdb.org/t/p/';
+  var APPS = [[/prime|amazon/i, 'Prime Video'], [/netflix/i, 'Netflix'], [/hulu/i, 'Hulu'], [/disney/i, 'Disney+'], [/crunchy/i, 'Crunchyroll'], [/\baha\b/i, 'aha'], [/zee ?5/i, 'ZEE5']];
+  var RECENT = /\b(new|newest|latest|recent|recently|just|this week|last week|past \d|past (few|couple)|days?|released|arriv|dropped|20(2[5-9]|3\d))\b/i;
+  function namedApp(t) { for (var i = 0; i < APPS.length; i++) if (APPS[i][0].test(t)) return APPS[i][1]; return ''; }
+  function appName(t) { return namedApp(t || ''); }
 
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -112,47 +116,89 @@
       .then(function (r) { if (r.status === 401) throw new Error('TMDB key was rejected. Check it under Keys.'); return r.ok ? r.json() : null; });
   }
 
-  function askClaude(text) {
+  function askClaude(text, onPick) {
     var likes = jget('tva-likes', {}), liked = [], disliked = [];
     Object.keys(likes).forEach(function (k) { (likes[k].v > 0 ? liked : disliked).push(likes[k].t); });
     var recent = jget('tva-recent', []);
     var forWho = state.who === 0 ? 'one adult (' + ctx.me + ')' : state.who === 1 ? 'Preetham and Krishna Priya together' : 'the whole family, including a child (keep it kid-friendly)';
-    var sys = 'You recommend movies and series for a household in the United States. ' +
+    var today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    var fresh = RECENT.test(text), want = namedApp(text);
+    var sys = 'Today is ' + today + '. You recommend movies and series for a household in the United States. ' +
       'Their streaming apps: Netflix, Prime Video, Disney+, Hulu, Crunchyroll, aha, ZEE5. ' +
       'They watch English, Telugu, Hindi, Tamil, Malayalam, Korean (dramas and movies) and Japanese anime. ' +
       'Suggest only real, released titles that are likely streaming in the US on those apps right now. Mix well-known picks with a few lesser-known strong ones. ' +
-      'Output exactly 10 lines and nothing else (no intro, no notes), best first, each line: Title | year | movie or tv | ISO 639-1 language code | short reason under 80 characters';
+      (fresh ? 'This request is about recent releases. Use web search (one or two searches) to find titles that actually arrived on the requested app in the requested time window, counting back from today. Do not rely on memory for what is new. Include only titles you confirmed. If fewer than 10 match, output fewer lines. ' : '') +
+      (want ? 'Only suggest titles streaming on ' + want + '. ' : '') +
+      'Output the lines and nothing else (no intro, no notes), up to 10, best first, each line: Title | year | movie or tv | ISO 639-1 language code | short reason under 80 characters | streaming app';
     var user = 'What they asked for: ' + text + '\nWho is watching: ' + forWho +
       (liked.length ? '\nThey liked: ' + liked.slice(-25).join('; ') : '') +
       (disliked.length ? '\nNot for them: ' + disliked.slice(-25).join('; ') : '') +
       (recent.length ? '\nAlready suggested recently, avoid repeating: ' + recent.slice(-40).join('; ') : '');
+    var body = { model: MODEL, max_tokens: fresh ? 2000 : 900, thinking: { type: 'between_tools' }, system: sys, stream: true, messages: [{ role: 'user', content: user }] };
+    if (fresh) body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2, user_location: { type: 'approximate', country: 'US' } }];
+    var n = 0;
+
+    function parseLine(line) {
+      var f = line.split('|').map(function (x) { return x.trim(); });
+      if (f.length < 4 || !f[0] || /^title$/i.test(f[0]) || /^-+$/.test(f[0])) return;
+      n++;
+      onPick({ title: f[0].replace(/^[-*\d.\s]+/, '').replace(/\*/g, ''), year: parseInt(f[1], 10) || '', type: /tv|series/i.test(f[2]) ? 'tv' : 'movie', lang: (f[3] || '').toLowerCase(), why: f[4] || '', app: appName(f[5]) });
+    }
+
     function call(tries) {
       return fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': ls('tva-ai'), 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 900, thinking: { type: 'between_tools' }, system: sys, messages: [{ role: 'user', content: user }] })
+        body: JSON.stringify(body)
       }).catch(function () {
         if (tries > 0) { state.busy = 'Retrying…'; render(); return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return call(tries - 1); }); }
         throw new Error('Couldn’t reach Claude. Check Wi-Fi, keep this screen open, and tap Suggest again.');
       });
     }
-    return call(2).then(function (r) {
-      return r.json().then(function (d) {
-        if (!r.ok) throw new Error(r.status === 401 ? 'Anthropic key was rejected. Check it under Keys.' : (d.error && d.error.message) || 'AI request failed (' + r.status + ').');
-        var t = (d.content || []).map(function (c) { return c.text || ''; }).join('');
-        var picks = [];
-        t.split('\n').forEach(function (line) {
-          var f = line.split('|').map(function (x) { return x.trim(); });
-          if (f.length < 4 || !f[0] || /^title$/i.test(f[0])) return;
-          picks.push({ title: f[0].replace(/^[-*\d.\s]+/, ''), year: parseInt(f[1], 10) || '', type: /tv|series/i.test(f[2]) ? 'tv' : 'movie', lang: (f[3] || '').toLowerCase(), why: f[4] || '' });
+
+    function run() {
+      return call(2).then(function (r) {
+        if (!r.ok) return r.json().then(function (d) {
+          var msg = (d.error && d.error.message) || '';
+          if (body.tools && r.status !== 401 && /tool|search/i.test(msg)) { delete body.tools; return run(); }
+          throw new Error(r.status === 401 ? 'Anthropic key was rejected. Check it under Keys.' : msg || 'AI request failed (' + r.status + ').');
         });
-        if (!picks.length) throw new Error('Claude’s answer came back in an unexpected format. Tap Suggest again.');
-        return picks;
+        var reader = r.body.getReader(), dec = new TextDecoder(), sse = '', line = '', err = '';
+        function pump() {
+          return reader.read().then(function (x) {
+            if (x.done) { if (line) parseLine(line); line = ''; if (err) throw new Error(err); return; }
+            sse += dec.decode(x.value, { stream: true });
+            var parts = sse.split('\n'); sse = parts.pop();
+            parts.forEach(function (raw) {
+              if (raw.indexOf('data:') !== 0) return;
+              var ev; try { ev = JSON.parse(raw.slice(5)); } catch (e) { return; }
+              if (ev.type === 'content_block_start' && ev.content_block && ev.content_block.type !== 'text') {
+                line = ''; if (ev.content_block.type === 'server_tool_use' && state.busy !== 'Searching what’s new…') { state.busy = 'Searching what’s new…'; render(); }
+              } else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') {
+                line += ev.delta.text;
+                var ls2 = line.split('\n'); line = ls2.pop(); ls2.forEach(parseLine);
+              } else if (ev.type === 'error') { err = (ev.error && ev.error.message) || 'AI request failed.'; }
+            });
+            return pump();
+          });
+        }
+        return pump();
       });
+    }
+    return run().then(function () {
+      if (!n) throw new Error(fresh ? 'Couldn’t confirm any new releases matching that. Try a wider window, like “past 2 weeks”.' : 'Claude’s answer came back in an unexpected format. Tap Suggest again.');
+      return want;
     });
   }
 
+  var TC = 'tva-tmdbcache', TTL = 3 * 864e5;
   function resolve(c) {
+    var key = (c.type === 'tv' ? 'tv' : 'movie') + '|' + c.title.toLowerCase() + '|' + c.year, cache = jget(TC, {}), hit = cache[key];
+    if (hit && Date.now() - hit.at < TTL) {
+      var x = hit.v; if (!x) return Promise.resolve(null);
+      x = JSON.parse(JSON.stringify(x)); x.why = String(c.why || '').slice(0, 140); if (!x.app && c.app) x.app = c.app;
+      return Promise.resolve(x);
+    }
     var m = c.type === 'tv' ? 'tv' : 'movie';
     var yk = m === 'movie' ? 'primary_release_year' : 'first_air_date_year';
     var p = { query: c.title }; if (c.year) p[yk] = c.year;
@@ -165,24 +211,38 @@
         var us = (w && w.results && w.results.US) || {}, app = '';
         (us.flatrate || []).concat(us.ads || []).some(function (x) { if (PROV[x.provider_id]) { app = PROV[x.provider_id]; return true; } });
         var lang = r.original_language || c.lang;
-        if (!app && !INDIAN[lang]) return null;
-        return { id: r.id, m: m, t: r.title || r.name, y: (r.release_date || r.first_air_date || '').slice(0, 4), p: r.poster_path || '', why: String(c.why || '').slice(0, 140), app: app, lang: ({ en: 'English', te: 'Telugu', hi: 'Hindi', ta: 'Tamil', ml: 'Malayalam', ko: 'Korean', ja: 'Japanese' })[lang] || '' };
+        var base = { id: r.id, m: m, t: r.title || r.name, y: (r.release_date || r.first_air_date || '').slice(0, 4), p: r.poster_path || '', app: app, indian: !!INDIAN[lang], lang: ({ en: 'English', te: 'Telugu', hi: 'Hindi', ta: 'Tamil', ml: 'Malayalam', ko: 'Korean', ja: 'Japanese' })[lang] || '' };
+        try { var cc = jget(TC, {}); cc[key] = { at: Date.now(), v: base }; var ks = Object.keys(cc); if (ks.length > 300) ks.slice(0, ks.length - 300).forEach(function (k) { delete cc[k]; }); ls(TC, JSON.stringify(cc)); } catch (e) {}
+        var x = JSON.parse(JSON.stringify(base)); x.why = String(c.why || '').slice(0, 140); if (!x.app && c.app) x.app = c.app;
+        return x;
       });
-    }).catch(function (e) { if (/key was rejected/.test(e.message)) throw e; return null; });
+    }).then(function (x) { return x && (x.app || x.indian) ? x : null; })
+      .catch(function (e) { if (/key was rejected/.test(e.message)) throw e; return null; });
   }
 
   function suggest() {
-    var text = (state.text || '').trim() || 'Something great for tonight';
-    state.busy = 'Thinking…'; state.err = ''; state.picks = null; render();
-    askClaude(text).then(function (cands) {
-      state.busy = 'Checking your apps…'; render();
-      var list = cands.slice(0, 12), out = [];
-      return Promise.all(list.map(resolve));
-    }).then(function (list) {
-      var seen = {}, out = [];
-      list.forEach(function (x) { if (x && !seen[x.m + x.id]) { seen[x.m + x.id] = 1; out.push(x); } });
-      out.sort(function (a, b) { return (b.app ? 1 : 0) - (a.app ? 1 : 0); });
-      state.picks = out.slice(0, 8); state.ask = text; state.busy = false;
+    var text = (state.text || '').trim() || 'Something great for tonight', want = namedApp(text);
+    var slots = [], jobs = [], seen = {}, fatal = null;
+    state.busy = 'Thinking…'; state.err = ''; state.picks = null; state.ask = text; render();
+    function show() {
+      var out = []; seen = {};
+      slots.forEach(function (x) { if (x && !seen[x.m + x.id] && (!want || x.app === want)) { seen[x.m + x.id] = 1; out.push(x); } });
+      out = out.filter(function (x) { return x.app; }).concat(out.filter(function (x) { return !x.app; }));
+      state.picks = out.slice(0, 8);
+    }
+    askClaude(text, function (c) {
+      var i = slots.length; slots.push(null);
+      jobs.push(resolve(c).then(function (x) {
+        slots[i] = x; show();
+        if (state.picks.length && state.busy !== 'Finding more…') state.busy = 'Finding more…';
+        render();
+      }, function (e) { fatal = e; }));
+    }).then(function () {
+      return Promise.all(jobs);
+    }).then(function () {
+      if (fatal) throw fatal;
+      show(); state.ask = text; state.busy = false;
+      if (!state.picks.length) { state.picks = null; throw new Error(want ? 'Nothing matching that is on ' + want + ' right now. Try another app or a wider window.' : 'No matches on your apps. Try rewording.'); }
       var recent = jget('tva-recent', []).concat(state.picks.map(function (x) { return x.t; })); ls('tva-recent', JSON.stringify(recent.slice(-60)));
       render();
     }).catch(function (e) { state.busy = false; state.err = e.message || 'Something went wrong.'; render(); });
